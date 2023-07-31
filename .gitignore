@@ -1,0 +1,7 @@
+# gitignore for the markdown-html-rs crate
+
+# Visual Studio Code settings
+.vscode
+
+# Target directory
+/target
