@@ -46,6 +46,16 @@ struct FrontMatter {
     tags: Vec<String>,
 }
 
+impl Default for FrontMatter {
+    fn default() -> Self {
+        FrontMatter {
+            title: "".to_string(),
+            date: "".to_string(),
+            tags: Vec::new(),
+        }
+    }
+}
+
 fn main() -> Result<(), ConversionError> {
     // create an output buffer
     let mut stdout = io::stdout();
@@ -64,9 +74,11 @@ fn main() -> Result<(), ConversionError> {
     let matter = Matter::<YAML>::new().parse(&markdown_input);
     let front_matter: FrontMatter = matter
         .data
-        .unwrap()
-        .deserialize()
-        .map_err(ConversionError::Deserialization)?;
+        .as_ref()
+        .map(|data| data.deserialize())
+        .transpose()
+        .map_err(ConversionError::Deserialization)?
+        .unwrap_or_default();
 
     writeln!(stdout, "{:?}", front_matter).map_err(ConversionError::FileWrite)?;
     let frontmatter_regex =
