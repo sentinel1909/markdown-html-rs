@@ -5,3 +5,7 @@
 
 # Target directory
 /target
+
+# Exclude test files
+*.markdown
+*.html

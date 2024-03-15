@@ -15,12 +15,18 @@ use thiserror::Error;
 /// enum to represent error types
 #[derive(Error, Debug)]
 enum ConversionError {
-    #[error("Unable to read the file contents: {0}")]
-    Fileread(std::io::Error),
-    #[error("Unable to convert file contents to markdown: {0}")]
-    Markdownconvert(FromUtf8Error),
-    #[error("Unable to write the html file: {0}")]
+    #[error("File read error: {0}")]
+    FileRead(std::io::Error),
+    #[error("Deserialization error: {0}")]
+    Deserialization(serde_json::error::Error),
+    #[error("File write error: {0}")]
+    FileWrite(std::io::Error),
+    #[error("HTML write error: {0}")]
     HTMLWrite(std::io::Error),
+    #[error("Markdown conversion error: {0}")]
+    MarkdownConversion(FromUtf8Error),
+    #[error("Regex error: {0}")]
+    Regex(regex::Error),
 }
 
 /// struct to represent command line arguments
@@ -41,23 +47,30 @@ struct FrontMatter {
 }
 
 fn main() -> Result<(), ConversionError> {
+    // create an output buffer
+    let mut stdout = io::stdout();
+
     // get the file name from the command line input
     let args = Args::parse();
 
     // read the file contents and save it as a vector of u8
     // convert the file contents into a markdown string
-    let file_contents = fs::read(args.filename).map_err(ConversionError::Fileread)?;
+    let file_contents = fs::read(args.filename).map_err(ConversionError::FileRead)?;
     let markdown_input =
-        String::from_utf8(file_contents).map_err(ConversionError::Markdownconvert)?;
+        String::from_utf8(file_contents).map_err(ConversionError::MarkdownConversion)?;
 
     // parse the front matter in the input string and deserialize it into a FrontMatter struct
     // remove the front matter, leaving on the body content of the markdown file
-    let matter = Matter::<YAML>::new();
-    let result = matter.parse(&markdown_input);
-    let front_matter: FrontMatter = result.data.unwrap().deserialize().unwrap();
-    let mut stdout = io::stdout();
-    writeln!(stdout, "{:?}", front_matter).expect("Could not write to stdout...");
-    let frontmatter_regex = Regex::new(r"---\s*\n(?s:.+?)\n---\s*\n").unwrap();
+    let matter = Matter::<YAML>::new().parse(&markdown_input);
+    let front_matter: FrontMatter = matter
+        .data
+        .unwrap()
+        .deserialize()
+        .map_err(ConversionError::Deserialization)?;
+
+    writeln!(stdout, "{:?}", front_matter).map_err(ConversionError::FileWrite)?;
+    let frontmatter_regex =
+        Regex::new(r"---\s*\n(?s:.+?)\n---\s*\n").map_err(ConversionError::Regex)?;
     let markdown_body = frontmatter_regex.replace(&markdown_input, "");
 
     // parse the markdown body and convert it to html, any html tags in the markdown file are passed through
@@ -67,9 +80,8 @@ fn main() -> Result<(), ConversionError> {
 
     // write the html output file
     fs::write("output.html", html_output).map_err(ConversionError::HTMLWrite)?;
-    let mut stdout = io::stdout();
     writeln!(stdout, "Markdown converted and saved to output.html")
-        .expect("Could not write to stdout...");
+        .map_err(ConversionError::FileWrite)?;
 
     Ok(())
 }

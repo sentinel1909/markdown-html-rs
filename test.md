@@ -10,4 +10,10 @@ tags:
 ## Test Markdown
 Here's some markdown text. The front matter should be extracted.
 
+Here's a snip of Rust code:
+
+```rust
+let x = 8;
+```
+
 <footer>This is the footer.</footer>
