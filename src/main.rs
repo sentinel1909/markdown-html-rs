@@ -1,35 +1,18 @@
-/// main.rs
-/// A command line program which takes a markdown file as input, converts to HTML, and outputs the HTML file
+// main.rs
+// A command line program which takes a markdown file as input, converts to HTML, and outputs the HTML file
 
-/// dependencies
+// dependencies
+use color_eyre::Result;
 use clap::Parser;
 use gray_matter::engine::YAML;
 use gray_matter::Matter;
 use regex::Regex;
-use serde::Deserialize;
-use std::fs;
+use serde::{Deserialize, Serialize};
+use serde_json::to_string_pretty;
+use std::fs::{self, File};
 use std::io::{self, Write};
-use std::string::FromUtf8Error;
-use thiserror::Error;
 
-/// enum to represent error types
-#[derive(Error, Debug)]
-enum ConversionError {
-    #[error("File read error: {0}")]
-    FileRead(std::io::Error),
-    #[error("Deserialization error: {0}")]
-    Deserialization(serde_json::error::Error),
-    #[error("File write error: {0}")]
-    FileWrite(std::io::Error),
-    #[error("HTML write error: {0}")]
-    HTMLWrite(std::io::Error),
-    #[error("Markdown conversion error: {0}")]
-    MarkdownConversion(FromUtf8Error),
-    #[error("Regex error: {0}")]
-    Regex(regex::Error),
-}
-
-/// struct to represent command line arguments
+// struct to represent command line arguments
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -37,12 +20,12 @@ struct Args {
     filename: String,
 }
 
-/// struct to represent the front matter of the markdown document
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+// struct to represent the front matter of the markdown document
+#[derive(Debug, Deserialize, Serialize)]
 struct FrontMatter {
     title: String,
     date: String,
+    categories: Vec<String>,
     tags: Vec<String>,
 }
 
@@ -51,12 +34,16 @@ impl Default for FrontMatter {
         FrontMatter {
             title: "".to_string(),
             date: "".to_string(),
+            categories: Vec::new(),
             tags: Vec::new(),
         }
     }
 }
 
-fn main() -> Result<(), ConversionError> {
+fn main() -> Result<()> {
+    // initalize error handling
+    color_eyre::install()?;
+
     // create an output buffer
     let mut stdout = io::stdout();
 
@@ -65,9 +52,9 @@ fn main() -> Result<(), ConversionError> {
 
     // read the file contents and save it as a vector of u8
     // convert the file contents into a markdown string
-    let file_contents = fs::read(args.filename).map_err(ConversionError::FileRead)?;
+    let file_contents = fs::read(args.filename)?;
     let markdown_input =
-        String::from_utf8(file_contents).map_err(ConversionError::MarkdownConversion)?;
+        String::from_utf8(file_contents)?;
 
     // parse the front matter in the input string and deserialize it into a FrontMatter struct
     // remove the front matter, leaving on the body content of the markdown file
@@ -76,13 +63,17 @@ fn main() -> Result<(), ConversionError> {
         .data
         .as_ref()
         .map(|data| data.deserialize())
-        .transpose()
-        .map_err(ConversionError::Deserialization)?
+        .transpose()?
         .unwrap_or_default();
 
-    writeln!(stdout, "{:?}", front_matter).map_err(ConversionError::FileWrite)?;
+    // write the frontmatter to a file
+    let json_output = to_string_pretty(&front_matter)?;
+    let mut front_matter_output = File::create("public/frontmatter/front_matter_output.json")?;
+    front_matter_output.write_all(json_output.as_bytes())?;
+    writeln!(stdout, "Frontmatter extracted and saved to public/frontmatter/front_matter_output.json")?;
+
     let frontmatter_regex =
-        Regex::new(r"---\s*\n(?s:.+?)\n---\s*\n").map_err(ConversionError::Regex)?;
+        Regex::new(r"---\s*\n(?s:.+?)\n---\s*\n")?;
     let markdown_body = frontmatter_regex.replace(&markdown_input, "");
 
     // parse the markdown body and convert it to html, any html tags in the markdown file are passed through
@@ -91,9 +82,8 @@ fn main() -> Result<(), ConversionError> {
     pulldown_cmark::html::push_html(&mut html_output, parser);
 
     // write the html output file
-    fs::write("output.html", html_output).map_err(ConversionError::HTMLWrite)?;
-    writeln!(stdout, "Markdown converted and saved to output.html")
-        .map_err(ConversionError::FileWrite)?;
+    fs::write("public/output.html", html_output)?;
+    writeln!(stdout, "Markdown converted and saved to public/output.html")?;
 
     Ok(())
 }
