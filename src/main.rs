@@ -9,15 +9,18 @@ use gray_matter::Matter;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
-use std::fs::{self, File};
-use std::io::{self, Write};
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::PathBuf;
 
 // struct to represent command line arguments
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(short, long)]
-    filename: String,
+    file: String,
+    #[arg(short, long)]
+    output: String,
 }
 
 // struct to represent the front matter of the markdown document
@@ -50,11 +53,13 @@ fn main() -> Result<()> {
     // get the file name from the command line input
     let args = Args::parse();
 
-    // read the file contents and save it as a vector of u8
-    // convert the file contents into a markdown string
-    let file_contents = fs::read(args.filename)?;
-    let markdown_input =
-        String::from_utf8(file_contents)?;
+    // open the file provided by the user and convert the frontmatter and markdown into a string
+    let input_file = format!("content/{}", args.file);
+    let input_file_path = PathBuf::from(input_file);
+    let mut file = File::open(input_file_path)?;
+    let mut markdown_input = String::new();
+    file.read_to_string(&mut markdown_input)?;
+    println!("Markdown file read successfully.");
 
     // parse the front matter in the input string and deserialize it into a FrontMatter struct
     // remove the front matter, leaving on the body content of the markdown file
@@ -65,12 +70,14 @@ fn main() -> Result<()> {
         .map(|data| data.deserialize())
         .transpose()?
         .unwrap_or_default();
+    println!("Front matter extracted successfully.");
 
     // write the frontmatter to a file
     let json_output = to_string_pretty(&front_matter)?;
-    let mut front_matter_output = File::create("public/frontmatter/front_matter_output.json")?;
+    let front_matter_output_path = "public/frontmatter/front_matter_output.json";
+    let mut front_matter_output = File::create(front_matter_output_path)?;
     front_matter_output.write_all(json_output.as_bytes())?;
-    writeln!(stdout, "Frontmatter extracted and saved to public/frontmatter/front_matter_output.json")?;
+    writeln!(stdout, "Frontmatter converted to JSON and saved to public/frontmatter/front_matter_output.json")?;
 
     let frontmatter_regex =
         Regex::new(r"---\s*\n(?s:.+?)\n---\s*\n")?;
@@ -82,7 +89,10 @@ fn main() -> Result<()> {
     pulldown_cmark::html::push_html(&mut html_output, parser);
 
     // write the html output file
-    fs::write("public/output.html", html_output)?;
+    let output_file = format!("public/{}", args.output);
+    let output_file_path = PathBuf::from(output_file);
+    let mut html = File::create(output_file_path)?;
+    html.write_all(html_output.as_bytes())?;
     writeln!(stdout, "Markdown converted and saved to public/output.html")?;
 
     Ok(())
